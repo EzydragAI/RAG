@@ -1,0 +1,1113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deep Dive into RAG (Retrieval-Augmented Generation)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Lato:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        /* 1. THE SETUP */
+        * { box-sizing: border-box; }
+        p { margin: 0; margin-bottom: 15px; }
+
+        body {
+            background-color: #020617; /* Slate 950 */
+            display: grid;
+            gap: 20px;
+            grid-template-columns: 1fr;
+            margin: 0;
+            min-height: 100vh;
+            padding: 20px 0;
+            place-items: center;
+        }
+
+        .slide-container {
+            align-items: center;
+            background-color: #0F172A; /* Slate 900 */
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+            font-family: 'Lato', sans-serif;
+            height: 720px;
+            justify-content: center;
+            overflow: hidden;
+            padding: 60px;
+            position: relative;
+            width: 1280px;
+        }
+
+        /* Abstract glowing background design */
+        .slide-container::before {
+            content: '';
+            height: 100%;
+            left: 0;
+            position: absolute;
+            top: 0;
+            width: 100%;
+            z-index: 0;
+            background: radial-gradient(circle at 15% 20%, rgba(56, 189, 248, 0.08) 0%, transparent 35%),
+                        radial-gradient(circle at 85% 80%, rgba(129, 140, 248, 0.05) 0%, transparent 40%);
+        }
+
+        .slide-container > * { position: relative; z-index: 1; }
+
+        /* 2. CONSISTENT TYPOGRAPHY */
+        .slide-container h1, .slide-container h2, .slide-container h3 {
+            color: #F8FAFC; /* Slate 50 */
+            font-weight: 700;
+            font-family: 'Poppins', sans-serif;
+            margin: 0;
+        }
+
+        .slide-container p, .slide-container li, .slide-container .subtitle,
+        .slide-container th, .slide-container td, .slide-container .bleed-text-side p {
+            color: #CBD5E1; /* Slate 300 */
+            font-family: 'Lato', sans-serif;
+        }
+
+        .slide-container h1 { font-size: 70px; }
+        .slide-container .slide-title {
+            font-size: 40px;
+            font-weight: 600;
+            margin-bottom: 40px;
+            text-align: left;
+            width: 100%;
+            color: #38BDF8; /* Sky Blue Accent */
+        }
+        
+        .slide-container h3 { font-size: 32px; font-weight: 600; margin-bottom: 15px; color: #F8FAFC; }
+        
+        .slide-container p, .slide-container li, .slide-container th, .slide-container td {
+            font-size: 18px; line-height: 1.6;
+        }
+
+        .slide-container .subtitle { font-weight: 400; margin: 20px auto; color: #94A3B8; }
+
+        .slide-container .content-area {
+            align-items: center;
+            display: flex;
+            flex-direction: column;
+            flex-grow: 1;
+            justify-content: center;
+            width: 100%;
+        }
+
+        /* 3. LAYOUT DEFINITIONS */
+        .title-layout { text-align: center; }
+        
+        .two-column {
+            align-items: flex-start;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 50px;
+            width: 100%;
+        }
+
+        .two-column.tiled { align-items: stretch; }
+        .two-column.tiled > div {
+            background-color: #1E293B; /* Slate 800 */
+            border-radius: 12px;
+            border: 1px solid #334155; /* Slate 700 */
+            padding: 40px;
+            text-align: left;
+        }
+        .two-column.tiled h3 { color: #38BDF8; }
+
+        .image-wrapper {
+            border-radius: 12px;
+            height: 350px;
+            max-width: 100%;
+            overflow: hidden;
+            width: 100%;
+            border: 1px solid #334155;
+            background-color: #020617;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .image-wrapper svg { width: 100%; height: 100%; display: block; }
+
+        .tiled-content {
+            align-items: stretch;
+            display: flex;
+            gap: 40px;
+            justify-content: center;
+            width: 100%;
+        }
+        .tile {
+            align-items: center;
+            background-color: #1E293B;
+            border-radius: 12px;
+            border: 1px solid #334155;
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            justify-content: flex-start;
+            padding: 30px;
+            text-align: left;
+        }
+        .tile .icon { color: #38BDF8; font-size: 48px; margin-bottom: 20px; text-align: center; width: 100%;}
+        .tile h3 { text-align: center; width: 100%; }
+
+        .section-title-layout {
+            align-items: center;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            justify-content: center;
+            text-align: center;
+            width: 100%;
+        }
+        .section-title-layout h2 { font-size: 60px; margin-bottom: 20px; color: #F8FAFC; }
+        .section-title-layout p { font-size: 22px; margin: 0 auto; max-width: 700px; color: #94A3B8; }
+        .section-title-layout hr {
+            background-color: #38BDF8; border: none; height: 5px; margin: 30px auto; width: 100px;
+        }
+
+        .table-layout { width: 100%; }
+        .table-layout table {
+            border-collapse: collapse; width: 100%; background-color: #1E293B; border-radius: 8px; overflow: hidden;
+        }
+        .table-layout th, .table-layout td {
+            border-bottom: 1px solid #334155; padding: 18px 24px; text-align: left;
+        }
+        .table-layout th { background-color: #020617; color: #38BDF8; font-size: 20px; font-weight: 700; }
+        .table-layout tr:last-child td { border-bottom: none; }
+
+        /* Bleed Image Layout Styling */
+        .slide-container.bleed-image-layout {
+            align-items: start;
+            display: grid;
+            gap: 50px;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            padding: 0;
+        }
+        .slide-container.bleed-image-layout > .content-container { padding: 60px 0 60px 60px; }
+        .slide-container.bleed-image-layout > .image-container { height: 100%; overflow: hidden; width: 100%; }
+        svg.bleed-image-side {
+            display: block; height: 720px; width: 100%; border-radius: 0 8px 8px 0;
+        }
+        .slide-container.bleed-image-layout .bleed-text-side {
+            display: flex; flex-direction: column; justify-content: center;
+        }
+
+        /* Custom Example Box for Educational clarity */
+        .example-box {
+            background-color: rgba(56, 189, 248, 0.08);
+            border-left: 4px solid #38BDF8;
+            border-radius: 4px;
+            padding: 15px;
+            width: 100%;
+            margin-bottom: 15px;
+        }
+        .example-box p { color: #94A3B8; margin-bottom: 5px; }
+        .example-box p:last-child { margin-bottom: 0; }
+        .code-text { font-family: 'Courier New', Courier, monospace; color: #7DD3FC; font-size: 15px; }
+        .highlight-accent { color: #10B981 !important; font-weight: bold; } /* Emerald Green */
+        .highlight-warn { color: #F59E0B !important; font-weight: bold; } /* Amber */
+
+        ul { list-style-type: none; padding-left: 0; margin: 0; }
+        .custom-bullet li { padding-left: 20px; position: relative; margin-bottom: 12px; }
+        .custom-bullet li::before { content: '•'; color: #38BDF8; font-size: 24px; position: absolute; left: 0; top: -5px; }
+    </style>
+</head>
+<body>
+
+<!-- Slide 1: Title_Slide -->
+<div class="slide-container" id="slide1">
+    <div class="title-layout">
+        <h1>Deep Dive into RAG</h1>
+        <p class="subtitle" style="font-size: 24px;">Mastering Retrieval-Augmented Generation<br>From Core Concepts to Advanced Architectures</p>
+    </div>
+</div>
+
+<!-- Slide 2: Two_Column_Tiled_Text (What is RAG) -->
+<div class="slide-container" id="slide2">
+    <h2 class="slide-title">What is RAG?</h2>
+    <div class="content-area">
+        <div class="two-column tiled">
+            <div>
+                <h3>The Problem & Solution</h3>
+                <p>Large Language Models (LLMs) have a knowledge cut-off date and are prone to <strong>hallucination</strong> when asked about private, proprietary, or highly recent data.</p>
+                <p><strong>RAG (Retrieval-Augmented Generation)</strong> acts as an open-book test. It forces the LLM to search for and read relevant external documents <em>before</em> answering, anchoring its response in verifiable facts.</p>
+            </div>
+            <div>
+                <h3>A Concrete Example</h3>
+                <div class="example-box">
+                    <p><strong>Without RAG (Blind Guess):</strong></p>
+                    <p class="code-text">User: What is my PTO balance?</p>
+                    <p class="code-text" style="color: #F87171;">LLM: I don't have access to your personal HR data.</p>
+                </div>
+                <div class="example-box">
+                    <p><strong>With RAG (Open Book):</strong></p>
+                    <p class="code-text">1. System auto-retrieves: [User_John_HR_File.pdf]</p>
+                    <p class="code-text">2. Prompt tells LLM to read the file.</p>
+                    <p class="code-text highlight-accent">3. LLM: John, you have 15 days of PTO remaining.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Slide 3: Bleed_Image_Right (The RAG Iceberg) -->
+<div class="slide-container bleed-image-layout" id="slide3">
+    <div class="content-container">
+        <h2 class="slide-title">The RAG Iceberg</h2>
+        <div class="content-area">
+            <div class="bleed-text-side">
+                <p>Building a basic RAG prototype takes just a few hours. This is the <strong>tip of the iceberg</strong>—LangChain tutorials, simple PDFs, and basic vector stores.</p>
+                <p>Making RAG work reliably in enterprise production is a massive engineering challenge. The <strong>underwater structure</strong> requires advanced techniques like chunk optimization, query reformulation, cross-encoder reranking, and secure access controls.</p>
+            </div>
+        </div>
+    </div>
+    <div class="image-container">
+        <!-- INLINE CUSTOM SVG ICEBERG -->
+        <svg viewBox="0 0 800 1000" xmlns="http://www.w3.org/2000/svg" class="bleed-image-side">
+            <defs>
+                <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="30%" stop-color="#0F172A"/>
+                    <stop offset="30%" stop-color="#020617"/>
+                    <stop offset="100%" stop-color="#000000"/>
+                </linearGradient>
+            </defs>
+            <rect width="800" height="1000" fill="url(#bgGrad)"/>
+            
+            <!-- Water Surface Line -->
+            <path d="M0 300 Q 200 280 400 300 T 800 300 L 800 305 L 0 305 Z" fill="#38BDF8" opacity="0.3"/>
+            
+            <!-- Tip of Iceberg (Above Water) -->
+            <path d="M380 80 L460 200 L490 300 L270 300 L340 160 Z" fill="#F8FAFC"/>
+            <path d="M380 80 L400 220 L380 300 L270 300 L340 160 Z" fill="#E2E8F0"/>
+            
+            <!-- Base of Iceberg (Below Water) -->
+            <path d="M270 300 L490 300 L600 500 L550 750 L400 920 L250 800 L180 550 Z" fill="#0284C7" opacity="0.6"/>
+            <path d="M270 300 L400 300 L400 920 L250 800 L180 550 Z" fill="#0369A1" opacity="0.7"/>
+
+            <!-- Annotations Above Water -->
+            <text x="510" y="150" fill="#F8FAFC" font-size="28" font-family="'Lato', sans-serif" font-weight="bold">Basic RAG</text>
+            <line x1="440" y1="140" x2="500" y2="140" stroke="#F8FAFC" stroke-dasharray="4" stroke-width="2"/>
+            <text x="510" y="190" fill="#94A3B8" font-size="20" font-family="'Lato', sans-serif">PDF Loaders</text>
+            <text x="510" y="220" fill="#94A3B8" font-size="20" font-family="'Lato', sans-serif">Simple Vector DB</text>
+            
+            <!-- Annotations Below Water -->
+            <text x="610" y="440" fill="#38BDF8" font-size="28" font-family="'Lato', sans-serif" font-weight="bold">Advanced RAG</text>
+            <line x1="530" y1="430" x2="600" y2="430" stroke="#38BDF8" stroke-dasharray="4" stroke-width="2"/>
+            <text x="610" y="480" fill="#CBD5E1" font-size="20" font-family="'Lato', sans-serif">• Semantic Chunking</text>
+            <text x="610" y="520" fill="#CBD5E1" font-size="20" font-family="'Lato', sans-serif">• Hybrid Search</text>
+            <text x="610" y="560" fill="#CBD5E1" font-size="20" font-family="'Lato', sans-serif">• Cross-Encoders</text>
+            <text x="610" y="600" fill="#CBD5E1" font-size="20" font-family="'Lato', sans-serif">• GraphRAG</text>
+            <text x="610" y="640" fill="#CBD5E1" font-size="20" font-family="'Lato', sans-serif">• Evaluation Metrics</text>
+        </svg>
+    </div>
+</div>
+
+<!-- Slide 4: Section_Title (Phase 1) -->
+<div class="slide-container" id="slide4">
+    <div class="section-title-layout">
+        <hr>
+        <h2>Phase 1: Beginners</h2>
+        <p>The Tip of the Iceberg. Setting up the fundamental data retrieval pipeline.</p>
+    </div>
+</div>
+
+<!-- Slide 5: Image_Right_Text_Left (The Art of Chunking) -->
+<div class="slide-container" id="slide5">
+    <h2 class="slide-title">The Art of Chunking</h2>
+    <div class="content-area">
+        <div class="two-column">
+            <div>
+                <p>LLMs have strict limits on how much text they can read at once (the context window). We cannot pass a 500-page manual into a prompt.</p>
+                <p><strong>Chunking</strong> is the process of breaking large documents into smaller, digestible pieces. How you chunk deeply affects accuracy.</p>
+                <ul class="custom-bullet">
+                    <li><strong>Fixed-Size Chunking:</strong> Splitting every 500 words. Fast, but might cut a sentence or paragraph in half, destroying context.</li>
+                    <li><strong>Semantic Chunking:</strong> Splitting intelligently by paragraphs, headers, or sentences.</li>
+                    <li><strong>Chunk Overlap:</strong> Taking the last 50 words of Chunk A and starting Chunk B with them to preserve flow.</li>
+                </ul>
+            </div>
+            <div>
+                <div class="image-wrapper">
+                    <!-- INLINE SVG: CHUNKING VISUALIZATION -->
+                    <svg viewBox="0 0 500 350" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: 100%; background: #020617; border-radius: 12px;">
+                        <!-- Original Document -->
+                        <rect x="50" y="30" width="120" height="280" rx="4" fill="#1E293B" stroke="#334155" stroke-width="2"/>
+                        <line x1="65" y1="60" x2="155" y2="60" stroke="#94A3B8" stroke-width="4"/>
+                        <line x1="65" y1="80" x2="140" y2="80" stroke="#94A3B8" stroke-width="4"/>
+                        <line x1="65" y1="120" x2="155" y2="120" stroke="#94A3B8" stroke-width="4"/>
+                        <line x1="65" y1="140" x2="155" y2="140" stroke="#94A3B8" stroke-width="4"/>
+                        <line x1="65" y1="160" x2="120" y2="160" stroke="#94A3B8" stroke-width="4"/>
+                        <line x1="65" y1="210" x2="155" y2="210" stroke="#94A3B8" stroke-width="4"/>
+                        <line x1="65" y1="230" x2="140" y2="230" stroke="#94A3B8" stroke-width="4"/>
+                        <text x="110" y="335" fill="#F8FAFC" font-size="14" text-anchor="middle" font-family="'Lato', sans-serif">Original Doc</text>
+
+                        <!-- Arrows -->
+                        <path d="M 190 170 L 230 170" stroke="#38BDF8" stroke-width="4" marker-end="url(#arrow)"/>
+                        
+                        <!-- Chunks -->
+                        <rect x="270" y="30" width="180" height="70" rx="4" fill="#0F172A" stroke="#38BDF8" stroke-width="2"/>
+                        <text x="360" y="50" fill="#38BDF8" font-size="12" text-anchor="middle" font-family="'Lato', sans-serif" font-weight="bold">Chunk 1 (Tokens 0-200)</text>
+                        <line x1="285" y1="65" x2="435" y2="65" stroke="#94A3B8" stroke-width="3"/>
+                        <line x1="285" y1="80" x2="410" y2="80" stroke="#94A3B8" stroke-width="3"/>
+
+                        <rect x="270" y="130" width="180" height="70" rx="4" fill="#0F172A" stroke="#10B981" stroke-width="2"/>
+                        <!-- Overlap Visual Indicator -->
+                        <rect x="270" y="130" width="180" height="20" fill="#38BDF8" opacity="0.2"/>
+                        <text x="360" y="150" fill="#10B981" font-size="12" text-anchor="middle" font-family="'Lato', sans-serif" font-weight="bold">Chunk 2 (Tokens 150-350)</text>
+                        <line x1="285" y1="165" x2="435" y2="165" stroke="#94A3B8" stroke-width="3"/>
+                        <line x1="285" y1="180" x2="380" y2="180" stroke="#94A3B8" stroke-width="3"/>
+
+                        <rect x="270" y="230" width="180" height="70" rx="4" fill="#0F172A" stroke="#F59E0B" stroke-width="2"/>
+                        <rect x="270" y="230" width="180" height="20" fill="#10B981" opacity="0.2"/>
+                        <text x="360" y="250" fill="#F59E0B" font-size="12" text-anchor="middle" font-family="'Lato', sans-serif" font-weight="bold">Chunk 3 (Tokens 300-500)</text>
+                        <line x1="285" y1="265" x2="435" y2="265" stroke="#94A3B8" stroke-width="3"/>
+
+                        <!-- Note about Overlap -->
+                        <text x="360" y="123" fill="#94A3B8" font-size="12" text-anchor="middle" font-style="italic" font-family="'Lato', sans-serif">50 token overlap preserves context</text>
+                        
+                        <defs>
+                            <marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                                <path d="M 0 0 L 10 5 L 0 10 z" fill="#38BDF8" />
+                            </marker>
+                        </defs>
+                    </svg>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Slide 6: Image_Right_Text_Left (Embeddings & Similarity) -->
+<div class="slide-container" id="slide6">
+    <h2 class="slide-title">Vector Embeddings & Similarity</h2>
+    <div class="content-area">
+        <div class="two-column">
+            <div>
+                <p>Once chunked, an embedding model (like OpenAI's `text-embedding-3-small`) translates the text into a dense numerical array—often 768 to 1536 dimensions long.</p>
+                <p>This places the concept of the text into high-dimensional space. "Apple" (fruit) and "Apple" (company) are placed in entirely different areas based on their semantic meaning.</p>
+                <p>To find the most relevant chunk, the DB calculates the angular distance between the User's Query Vector and the Document Vectors using <strong>Cosine Similarity</strong>.</p>
+                
+                <!-- Display Math Requirement -->
+                <div id="formula-container" style="display: math; font-size: 30px; color: #38BDF8; margin-top: 15px; text-align: center; width: 100%;">
+                    <math xmlns="http://www.w3.org/1998/Math/MathML">
+                        <mi>cos</mi><mo>(</mo><mi>&#952;</mi><mo>)</mo>
+                        <mo>=</mo>
+                        <mfrac>
+                            <mrow><mi>A</mi><mo>&sdot;</mo><mi>B</mi></mrow>
+                            <mrow><mo>||</mo><mi>A</mi><mo>||</mo><mo>||</mo><mi>B</mi><mo>||</mo></mrow>
+                        </mfrac>
+                    </math>
+                </div>
+            </div>
+            <div>
+                <div class="image-wrapper">
+                    <!-- INLINE SVG VECTOR GRAPH -->
+                    <svg viewBox="0 0 500 350" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: 100%; background: #020617; border-radius: 12px;">
+                        <!-- Axes (3D Feel) -->
+                        <line x1="50" y1="300" x2="450" y2="300" stroke="#334155" stroke-width="3"/> <!-- X -->
+                        <line x1="50" y1="300" x2="50" y2="50" stroke="#334155" stroke-width="3"/>  <!-- Y -->
+                        <line x1="50" y1="300" x2="150" y2="200" stroke="#334155" stroke-width="2" stroke-dasharray="4"/> <!-- Z -->
+                        
+                        <!-- Vector A (Query) -->
+                        <line x1="50" y1="300" x2="350" y2="100" stroke="#38BDF8" stroke-width="4"/>
+                        <polygon points="350,100 335,105 345,120" fill="#38BDF8"/>
+                        <text x="360" y="95" fill="#38BDF8" font-size="18" font-family="'Lato', sans-serif" font-weight="bold">Query (A)</text>
+                        <text x="360" y="115" fill="#94A3B8" font-size="12" font-family="'Courier New'">[0.2, -0.4, 0.8...]</text>
+
+                        <!-- Vector B (Highly Relevant Doc) -->
+                        <line x1="50" y1="300" x2="400" y2="150" stroke="#10B981" stroke-width="4"/>
+                        <polygon points="400,150 385,145 390,160" fill="#10B981"/>
+                        <text x="410" y="145" fill="#10B981" font-size="18" font-family="'Lato', sans-serif" font-weight="bold">Doc 1</text>
+                        <text x="410" y="165" fill="#94A3B8" font-size="12" font-family="'Courier New'">[0.1, -0.3, 0.9...]</text>
+
+                        <!-- Vector C (Irrelevant Doc) -->
+                        <line x1="50" y1="300" x2="150" y2="80" stroke="#F87171" stroke-width="3"/>
+                        <polygon points="150,80 135,90 150,95" fill="#F87171"/>
+                        <text x="160" y="75" fill="#F87171" font-size="18" font-family="'Lato', sans-serif" font-weight="bold">Doc 2 (Irrelevant)</text>
+
+                        <!-- Angle Arc (Small angle = High Similarity) -->
+                        <path d="M 170 205 A 120 120 0 0 1 140 160" fill="none" stroke="#F8FAFC" stroke-width="2" stroke-dasharray="4"/>
+                        <text x="175" y="180" fill="#F8FAFC" font-size="20" font-family="'Lato', sans-serif">θ (Small = Match)</text>
+                    </svg>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Slide 7: Image_Right_Text_Left (The Generation Engine) -->
+<div class="slide-container" id="slide7">
+    <h2 class="slide-title">The Generation Engine (Prompt Injection)</h2>
+    <div class="content-area">
+        <div class="two-column">
+            <div>
+                <p>How does the LLM actually "read" the documents? Through a technique called <strong>Prompt Injection</strong> or Context Stuffing.</p>
+                <p>Orchestrators like LangChain act as the middleman. They take the chunks returned by the Vector DB and programmatically stitch them into a massive System Prompt alongside the user's original query.</p>
+                <p>We apply strict "guardrails" in the prompt, commanding the LLM to <em>only</em> use the provided context and to admit ignorance if the answer isn't there, practically eliminating hallucinations.</p>
+            </div>
+            <div>
+                <div class="image-wrapper">
+                    <!-- INLINE SVG: PROMPT CONSTRUCTION FLOW -->
+                    <svg viewBox="0 0 500 350" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: 100%; background: #020617; border-radius: 12px;">
+                        
+                        <!-- Input 1: User Query -->
+                        <rect x="30" y="30" width="140" height="60" rx="6" fill="#1E293B" stroke="#38BDF8" stroke-width="2"/>
+                        <text x="100" y="55" fill="#F8FAFC" font-size="14" font-weight="bold" text-anchor="middle" font-family="'Lato', sans-serif">User Query</text>
+                        <text x="100" y="75" fill="#94A3B8" font-size="11" text-anchor="middle" font-family="'Lato', sans-serif">"How to reset password?"</text>
+
+                        <!-- Input 2: System Guardrails -->
+                        <rect x="30" y="110" width="140" height="60" rx="6" fill="#1E293B" stroke="#F59E0B" stroke-width="2"/>
+                        <text x="100" y="135" fill="#F8FAFC" font-size="14" font-weight="bold" text-anchor="middle" font-family="'Lato', sans-serif">System Instructions</text>
+                        <text x="100" y="155" fill="#94A3B8" font-size="11" text-anchor="middle" font-family="'Lato', sans-serif">"Answer ONLY using context"</text>
+
+                        <!-- Input 3: Retrieved Context -->
+                        <rect x="30" y="190" width="140" height="100" rx="6" fill="#1E293B" stroke="#10B981" stroke-width="2"/>
+                        <text x="100" y="215" fill="#F8FAFC" font-size="14" font-weight="bold" text-anchor="middle" font-family="'Lato', sans-serif">Retrieved Context</text>
+                        <rect x="40" y="230" width="120" height="10" fill="#334155" rx="2"/>
+                        <rect x="40" y="250" width="100" height="10" fill="#334155" rx="2"/>
+                        <rect x="40" y="270" width="110" height="10" fill="#334155" rx="2"/>
+
+                        <!-- Arrows converging -->
+                        <path d="M 170 60 Q 230 60 230 140" fill="none" stroke="#94A3B8" stroke-width="2" marker-end="url(#arrow)"/>
+                        <path d="M 170 140 L 220 140" fill="none" stroke="#94A3B8" stroke-width="2" marker-end="url(#arrow)"/>
+                        <path d="M 170 240 Q 230 240 230 150" fill="none" stroke="#94A3B8" stroke-width="2" marker-end="url(#arrow)"/>
+
+                        <!-- Megaprompt Box -->
+                        <rect x="250" y="60" width="100" height="160" rx="8" fill="#0F172A" stroke="#38BDF8" stroke-width="3" stroke-dasharray="5"/>
+                        <text x="300" y="130" fill="#F8FAFC" font-size="16" font-weight="bold" text-anchor="middle" font-family="'Lato', sans-serif">Combined</text>
+                        <text x="300" y="155" fill="#38BDF8" font-size="14" font-weight="bold" text-anchor="middle" font-family="'Lato', sans-serif">Prompt</text>
+
+                        <!-- Arrow to LLM -->
+                        <path d="M 350 140 L 390 140" fill="none" stroke="#38BDF8" stroke-width="4" marker-end="url(#arrow-blue)"/>
+
+                        <!-- Final LLM & Output -->
+                        <rect x="400" y="110" width="80" height="60" rx="8" fill="#38BDF8"/>
+                        <text x="440" y="145" fill="#020617" font-size="18" font-weight="bold" text-anchor="middle" font-family="'Lato', sans-serif">LLM</text>
+
+                        <path d="M 440 170 L 440 220" fill="none" stroke="#10B981" stroke-width="4" marker-end="url(#arrow-green)"/>
+                        <text x="440" y="250" fill="#10B981" font-size="14" font-weight="bold" text-anchor="middle" font-family="'Lato', sans-serif">Accurate</text>
+                        <text x="440" y="270" fill="#10B981" font-size="14" font-weight="bold" text-anchor="middle" font-family="'Lato', sans-serif">Answer</text>
+
+                        <defs>
+                            <marker id="arrow-blue" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#38BDF8" /></marker>
+                            <marker id="arrow-green" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#10B981" /></marker>
+                        </defs>
+                    </svg>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Slide 8: Section_Title (Phase 2) -->
+<div class="slide-container" id="slide8">
+    <div class="section-title-layout">
+        <hr>
+        <h2>Phase 2: RAG for Builders</h2>
+        <p>Diving below the surface. Transforming a fragile prototype into a secure, production-ready system.</p>
+    </div>
+</div>
+
+<!-- Slide 9: Image_Right_Text_Left (Security & PII Masking) -->
+<div class="slide-container" id="slide9">
+    <h2 class="slide-title">Security & PII Masking</h2>
+    <div class="content-area">
+        <div class="two-column">
+            <div>
+                <p>Production RAG requires strict data privacy. Before sensitive enterprise documents are embedded and sent to external LLMs, they must be scrubbed.</p>
+                <p><strong>Personally Identifiable Information (PII)</strong> is programmatically masked to ensure compliance with GDPR and HIPAA regulations.</p>
+                <div class="example-box">
+                    <p><strong>Before Masking:</strong></p>
+                    <p class="code-text" style="color: #F87171;">"Contact John Doe at 555-0192 for the secret project details."</p>
+                    <br>
+                    <p><strong>After Masking:</strong></p>
+                    <p class="code-text highlight-accent">"Contact [PERSON] at [PHONE_NUM] for the secret project details."</p>
+                </div>
+            </div>
+            <div>
+                <div class="image-wrapper">
+                    <!-- INLINE SVG SECURITY SHIELD -->
+                    <svg viewBox="0 0 500 350" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: 100%; background: #020617; border-radius: 12px;">
+                        <!-- Document Base -->
+                        <rect x="180" y="60" width="140" height="180" rx="5" fill="#CBD5E1"/>
+                        <!-- Standard text lines -->
+                        <line x1="200" y1="90" x2="280" y2="90" stroke="#94A3B8" stroke-width="6" stroke-linecap="round"/>
+                        <line x1="200" y1="120" x2="300" y2="120" stroke="#94A3B8" stroke-width="6" stroke-linecap="round"/>
+                        <!-- Redacted PII lines (Black boxes) -->
+                        <line x1="200" y1="150" x2="260" y2="150" stroke="#1E293B" stroke-width="10" stroke-linecap="round"/>
+                        <line x1="200" y1="180" x2="290" y2="180" stroke="#1E293B" stroke-width="10" stroke-linecap="round"/>
+
+                        <!-- Green Privacy Shield -->
+                        <path d="M250 150 L350 190 L350 260 C350 310 300 330 250 340 C200 330 150 310 150 260 L150 190 Z" fill="#10B981" opacity="0.9" stroke="#059669" stroke-width="4"/>
+                        <!-- Lock Keyhole -->
+                        <circle cx="250" cy="230" r="15" fill="#020617"/>
+                        <polygon points="240,270 260,270 255,230 245,230" fill="#020617"/>
+                    </svg>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Slide 10: Two_Column_Tiled_Text (Advanced Retrieval Tech) -->
+<div class="slide-container" id="slide10">
+    <h2 class="slide-title">Advanced Retrieval Tech</h2>
+    <div class="content-area">
+        <div class="two-column tiled">
+            <div>
+                <h3>Query Reformulation</h3>
+                <p>Users often ask vague follow-up questions. RAG systems use a smaller LLM to rewrite the query by analyzing the chat history, ensuring the Vector DB has full context for the search.</p>
+                <div class="example-box">
+                    <p class="code-text">User: "How do I fix it?"</p>
+                    <p class="code-text highlight-accent">Reformulated: "How do I fix the Error 404 on the login page?"</p>
+                </div>
+            </div>
+            <div>
+                <h3>Multi-Hop Retrieval</h3>
+                <p>For complex logic, the system retrieves a document, finds a clue, formulates a new search, and repeats the process until the final answer is pieced together.</p>
+                <div class="example-box">
+                    <p class="code-text">Q: CEO of the company that makes the iPhone?</p>
+                    <p class="code-text highlight-warn">Hop 1: Apple makes the iPhone.</p>
+                    <p class="code-text highlight-accent">Hop 2: Tim Cook is CEO of Apple.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Slide 11: Image_Right_Text_Left (Reranking The Funnel) -->
+<div class="slide-container" id="slide11">
+    <h2 class="slide-title">Reranking (The Funnel)</h2>
+    <div class="content-area">
+        <div class="two-column">
+            <div>
+                <p>Vector DBs (Bi-encoders) are incredibly fast because embeddings are pre-computed. However, they can lack precision. If you retrieve 100 documents, the perfect answer might be ranked #45.</p>
+                <p>To solve this, we use a <strong>Funnel Effect</strong> with a Cross-Encoder:</p>
+                <ul class="custom-bullet">
+                    <li><strong>Broad Net (Bi-Encoder):</strong> DB fetches top 100 chunks instantly based on vector geometry.</li>
+                    <li><strong>Deep Score (Cross-Encoder):</strong> A slower, highly accurate ML model reads both the Query and each chunk simultaneously to score exact contextual relevance.</li>
+                    <li><strong>Refined Output:</strong> Only the absolute top 3 chunks survive the funnel to reach the LLM.</li>
+                </ul>
+            </div>
+            <div>
+                <div class="image-wrapper">
+                    <!-- INLINE SVG RERANKING FUNNEL -->
+                    <svg viewBox="0 0 500 350" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: 100%; background: #020617; border-radius: 12px;">
+                        <!-- Funnel Shape -->
+                        <path d="M 50 50 L 450 50 L 300 180 L 300 320 L 200 320 L 200 180 Z" fill="#1E293B" stroke="#38BDF8" stroke-width="4" stroke-linejoin="round"/>
+                        
+                        <!-- Top Docs (Lots of dots going in) -->
+                        <circle cx="150" cy="80" r="6" fill="#64748B"/>
+                        <circle cx="200" cy="70" r="6" fill="#64748B"/>
+                        <circle cx="250" cy="90" r="6" fill="#10B981"/> <!-- Good match hidden -->
+                        <circle cx="300" cy="70" r="6" fill="#64748B"/>
+                        <circle cx="350" cy="85" r="6" fill="#10B981"/> <!-- Good match hidden -->
+                        <circle cx="120" cy="110" r="6" fill="#64748B"/>
+                        <circle cx="180" cy="120" r="6" fill="#64748B"/>
+                        <circle cx="270" cy="110" r="6" fill="#10B981"/> <!-- Good match hidden -->
+                        <circle cx="380" cy="120" r="6" fill="#64748B"/>
+                        
+                        <text x="250" y="30" fill="#F8FAFC" font-size="16" text-anchor="middle" font-family="'Lato', sans-serif">Top 100 Chunks (Fast DB Search)</text>
+
+                        <!-- Funnel Label for Reranker -->
+                        <text x="250" y="150" fill="#38BDF8" font-size="16" text-anchor="middle" font-family="'Lato', sans-serif" font-weight="bold">Cross-Encoder Rescoring</text>
+                        
+                        <!-- Output (Filtered top 3 docs coming out) -->
+                        <circle cx="250" cy="220" r="10" fill="#10B981"/>
+                        <circle cx="250" cy="255" r="10" fill="#10B981"/>
+                        <circle cx="250" cy="290" r="10" fill="#10B981"/>
+
+                        <text x="330" y="260" fill="#F8FAFC" font-size="16" font-family="'Lato', sans-serif">Top 3 sent to LLM</text>
+                    </svg>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Slide 12: Image_Right_Text_Left (GraphRAG) -->
+<div class="slide-container" id="slide12">
+    <h2 class="slide-title">Beyond Vectors: GraphRAG</h2>
+    <div class="content-area">
+        <div class="two-column">
+            <div>
+                <p>Standard RAG fails at global, big-picture questions (e.g., "Summarize the main themes of the entire dataset") because vectors only fetch isolated, specific snippets.</p>
+                <p><strong>GraphRAG</strong> uses an LLM to extract entities (people, places, concepts) and their relationships, building a <strong>Knowledge Graph</strong> before querying.</p>
+                <p>When a user asks a question, the system navigates this web of connected nodes. This allows the AI to synthesize complex answers across thousands of documents, understanding how different entities interconnect.</p>
+            </div>
+            <div>
+                <div class="image-wrapper">
+                    <!-- INLINE SVG: KNOWLEDGE GRAPH -->
+                    <svg viewBox="0 0 500 350" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: 100%; background: #020617; border-radius: 12px;">
+                        
+                        <!-- Relationships (Lines) -->
+                        <line x1="250" y1="175" x2="150" y2="100" stroke="#94A3B8" stroke-width="2"/>
+                        <line x1="250" y1="175" x2="350" y2="100" stroke="#94A3B8" stroke-width="2"/>
+                        <line x1="250" y1="175" x2="250" y2="280" stroke="#94A3B8" stroke-width="2"/>
+                        <line x1="150" y1="100" x2="80" y2="180" stroke="#94A3B8" stroke-width="2"/>
+                        <line x1="350" y1="100" x2="420" y2="180" stroke="#94A3B8" stroke-width="2"/>
+
+                        <!-- Relationship Labels -->
+                        <text x="180" y="130" fill="#38BDF8" font-size="12" font-style="italic" font-family="'Lato', sans-serif" transform="rotate(-35, 180, 130)">developed_by</text>
+                        <text x="320" y="130" fill="#38BDF8" font-size="12" font-style="italic" font-family="'Lato', sans-serif" transform="rotate(35, 320, 130)">requires</text>
+                        <text x="260" y="230" fill="#38BDF8" font-size="12" font-style="italic" font-family="'Lato', sans-serif">funded_by</text>
+
+                        <!-- Nodes (Entities) -->
+                        <!-- Central Node -->
+                        <circle cx="250" cy="175" r="30" fill="#0F172A" stroke="#38BDF8" stroke-width="3"/>
+                        <text x="250" y="180" fill="#F8FAFC" font-size="14" font-weight="bold" text-anchor="middle" font-family="'Lato', sans-serif">Project X</text>
+                        
+                        <!-- Child Nodes -->
+                        <circle cx="150" cy="100" r="25" fill="#1E293B" stroke="#10B981" stroke-width="2"/>
+                        <text x="150" y="105" fill="#F8FAFC" font-size="12" text-anchor="middle" font-family="'Lato', sans-serif">Team A</text>
+
+                        <circle cx="350" cy="100" r="25" fill="#1E293B" stroke="#F59E0B" stroke-width="2"/>
+                        <text x="350" y="105" fill="#F8FAFC" font-size="12" text-anchor="middle" font-family="'Lato', sans-serif">Servers</text>
+
+                        <circle cx="250" cy="280" r="25" fill="#1E293B" stroke="#8B5CF6" stroke-width="2"/>
+                        <text x="250" y="285" fill="#F8FAFC" font-size="12" text-anchor="middle" font-family="'Lato', sans-serif">Grant Y</text>
+
+                        <!-- Leaf Nodes -->
+                        <circle cx="80" cy="180" r="20" fill="#1E293B" stroke="#94A3B8" stroke-width="1"/>
+                        <circle cx="420" cy="180" r="20" fill="#1E293B" stroke="#94A3B8" stroke-width="1"/>
+
+                    </svg>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Slide 12b: Image_Right_Text_Left (Hybrid Search) -->
+<div class="slide-container" id="slide12b">
+    <h2 class="slide-title">Hybrid Search: The Best of Both Worlds</h2>
+    <div class="content-area">
+        <div class="two-column">
+            <div>
+                <p>Dense Vector Embeddings are amazing at understanding <em>meaning</em>, but they often fail miserably at exact keyword matching. If a user searches for <strong>"Error Code ID-993A"</strong>, an embedding model might return chunks about general errors, completely missing the specific ID.</p>
+                <p><strong>Sparse Search (BM25):</strong> Traditional keyword search that excels at exact matches but fails if the user uses a synonym (e.g., searching "vacation" when the document says "holiday").</p>
+                <p><strong>Hybrid Search</strong> runs both simultaneously. It blends the semantic understanding of vectors with the precise matching of keywords, merging the scores (using algorithms like Reciprocal Rank Fusion) for the ultimate results.</p>
+            </div>
+            <div>
+                <div class="image-wrapper">
+                    <!-- INLINE SVG: HYBRID SEARCH FLOW -->
+                    <svg viewBox="0 0 500 350" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: 100%; background: #020617; border-radius: 12px;">
+                        
+                        <!-- Query -->
+                        <rect x="150" y="20" width="200" height="40" rx="4" fill="#1E293B" stroke="#F8FAFC" stroke-width="2"/>
+                        <text x="250" y="45" fill="#F8FAFC" font-size="14" font-weight="bold" text-anchor="middle" font-family="'Lato', sans-serif">Query: "Fix Error ID-993A"</text>
+
+                        <!-- Split Arrows -->
+                        <path d="M 200 60 L 120 100" fill="none" stroke="#94A3B8" stroke-width="2" marker-end="url(#arrow)"/>
+                        <path d="M 300 60 L 380 100" fill="none" stroke="#94A3B8" stroke-width="2" marker-end="url(#arrow)"/>
+
+                        <!-- Sparse/Keyword Search (Left) -->
+                        <rect x="40" y="100" width="160" height="70" rx="4" fill="#0F172A" stroke="#F59E0B" stroke-width="2"/>
+                        <text x="120" y="125" fill="#F59E0B" font-size="14" font-weight="bold" text-anchor="middle" font-family="'Lato', sans-serif">Sparse (Keyword)</text>
+                        <text x="120" y="145" fill="#94A3B8" font-size="11" text-anchor="middle" font-family="'Lato', sans-serif">Finds exact "ID-993A"</text>
+                        <text x="120" y="160" fill="#F87171" font-size="10" text-anchor="middle" font-family="'Lato', sans-serif">Misses "Fix" synonym</text>
+
+                        <!-- Dense/Vector Search (Right) -->
+                        <rect x="300" y="100" width="160" height="70" rx="4" fill="#0F172A" stroke="#38BDF8" stroke-width="2"/>
+                        <text x="380" y="125" fill="#38BDF8" font-size="14" font-weight="bold" text-anchor="middle" font-family="'Lato', sans-serif">Dense (Vector)</text>
+                        <text x="380" y="145" fill="#94A3B8" font-size="11" text-anchor="middle" font-family="'Lato', sans-serif">Finds "troubleshoot / fix"</text>
+                        <text x="380" y="160" fill="#F87171" font-size="10" text-anchor="middle" font-family="'Lato', sans-serif">Misses exact ID</text>
+
+                        <!-- Merge Arrows -->
+                        <path d="M 120 170 L 200 220" fill="none" stroke="#F59E0B" stroke-width="3" stroke-dasharray="4"/>
+                        <path d="M 380 170 L 300 220" fill="none" stroke="#38BDF8" stroke-width="3" stroke-dasharray="4"/>
+
+                        <!-- Rank Fusion Block -->
+                        <rect x="150" y="220" width="200" height="50" rx="4" fill="#1E293B" stroke="#10B981" stroke-width="3"/>
+                        <text x="250" y="240" fill="#10B981" font-size="14" font-weight="bold" text-anchor="middle" font-family="'Lato', sans-serif">Reciprocal Rank Fusion</text>
+                        <text x="250" y="260" fill="#94A3B8" font-size="12" text-anchor="middle" font-family="'Lato', sans-serif">(Score Blending)</text>
+
+                        <!-- Final Arrow -->
+                        <path d="M 250 270 L 250 300" fill="none" stroke="#10B981" stroke-width="4" marker-end="url(#arrow-green)"/>
+                        <text x="250" y="325" fill="#F8FAFC" font-size="16" font-weight="bold" text-anchor="middle" font-family="'Lato', sans-serif">Perfect Combined Result</text>
+
+                        <defs>
+                            <marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#94A3B8" /></marker>
+                        </defs>
+                    </svg>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Slide 12c: Image_Right_Text_Left (HNSW Vector Indexing) -->
+<div class="slide-container" id="slide12c">
+    <h2 class="slide-title">Under the Hood: HNSW Indexing</h2>
+    <div class="content-area">
+        <div class="two-column">
+            <div>
+                <p>If you have 10 million chunks, comparing your query to every single document one-by-one (K-Nearest Neighbors) would take forever. Vector databases must be fast.</p>
+                <p>To solve this, they use Approximate Nearest Neighbor (ANN) algorithms. The industry standard is <strong>HNSW (Hierarchical Navigable Small World)</strong>.</p>
+                <ul class="custom-bullet">
+                    <li><strong>Layered Graphs:</strong> HNSW creates multiple layers of graphs.</li>
+                    <li><strong>The Highway (Top Layer):</strong> The top layer has very few nodes with long connections, allowing the search to quickly jump to the right "neighborhood."</li>
+                    <li><strong>The Local Streets (Bottom Layer):</strong> As the search drops down through the layers, the node density increases, allowing for precise, millimeter-accurate similarity matching in milliseconds.</li>
+                </ul>
+            </div>
+            <div>
+                <div class="image-wrapper">
+                    <!-- INLINE SVG: HNSW GRAPH Layers -->
+                    <svg viewBox="0 0 500 350" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: 100%; background: #020617; border-radius: 12px;">
+                        
+                        <!-- Layer 2 (Top - Highway) -->
+                        <polygon points="100,50 450,50 350,120 0,120" fill="#38BDF8" opacity="0.1" stroke="#38BDF8" stroke-width="1"/>
+                        <text x="420" y="70" fill="#38BDF8" font-size="12" font-family="'Lato', sans-serif">Layer 2 (Fast Jump)</text>
+                        <!-- Top Nodes -->
+                        <circle cx="150" cy="80" r="5" fill="#38BDF8"/>
+                        <circle cx="300" cy="90" r="5" fill="#38BDF8"/>
+                        <circle cx="200" cy="100" r="5" fill="#38BDF8"/>
+                        <line x1="150" y1="80" x2="300" y2="90" stroke="#38BDF8" stroke-width="2"/>
+                        <line x1="150" y1="80" x2="200" y2="100" stroke="#38BDF8" stroke-width="2"/>
+
+                        <!-- Search Path Starts -->
+                        <circle cx="80" cy="70" r="8" fill="#F59E0B"/>
+                        <text x="80" y="55" fill="#F59E0B" font-size="14" font-weight="bold" font-family="'Lato', sans-serif">Query</text>
+                        <path d="M 80 70 L 150 80" fill="none" stroke="#F59E0B" stroke-width="3" stroke-dasharray="4"/>
+
+                        <!-- Layer 1 (Middle) -->
+                        <polygon points="100,150 450,150 350,220 0,220" fill="#10B981" opacity="0.1" stroke="#10B981" stroke-width="1"/>
+                        <text x="420" y="170" fill="#10B981" font-size="12" font-family="'Lato', sans-serif">Layer 1</text>
+                        <!-- Middle Nodes (More dense) -->
+                        <circle cx="150" cy="180" r="4" fill="#10B981"/>
+                        <circle cx="220" cy="170" r="4" fill="#10B981"/>
+                        <circle cx="180" cy="200" r="4" fill="#10B981"/>
+                        <circle cx="120" cy="190" r="4" fill="#10B981"/>
+                        <line x1="150" y1="180" x2="220" y2="170" stroke="#10B981" stroke-width="1"/>
+                        <line x1="150" y1="180" x2="180" y2="200" stroke="#10B981" stroke-width="1"/>
+                        <line x1="150" y1="180" x2="120" y2="190" stroke="#10B981" stroke-width="1"/>
+
+                        <!-- Drop Down Path -->
+                        <path d="M 150 80 L 150 180" fill="none" stroke="#F59E0B" stroke-width="3" stroke-dasharray="4"/>
+                        <path d="M 150 180 L 180 200" fill="none" stroke="#F59E0B" stroke-width="3" stroke-dasharray="4"/>
+
+                        <!-- Layer 0 (Bottom - Dense) -->
+                        <polygon points="100,250 450,250 350,320 0,320" fill="#8B5CF6" opacity="0.1" stroke="#8B5CF6" stroke-width="1"/>
+                        <text x="420" y="270" fill="#8B5CF6" font-size="12" font-family="'Lato', sans-serif">Layer 0 (Precise)</text>
+                        <!-- Bottom Nodes (Very dense cluster around target) -->
+                        <circle cx="180" cy="280" r="3" fill="#8B5CF6"/>
+                        <circle cx="200" cy="275" r="3" fill="#8B5CF6"/>
+                        <circle cx="190" cy="295" r="3" fill="#8B5CF6"/>
+                        <circle cx="170" cy="290" r="3" fill="#8B5CF6"/>
+                        <circle cx="210" cy="285" r="3" fill="#8B5CF6"/>
+                        <!-- Connected network -->
+                        <line x1="180" y1="280" x2="200" y2="275" stroke="#8B5CF6" stroke-width="0.5"/>
+                        <line x1="180" y1="280" x2="190" y2="295" stroke="#8B5CF6" stroke-width="0.5"/>
+                        <line x1="180" y1="280" x2="170" y2="290" stroke="#8B5CF6" stroke-width="0.5"/>
+                        <line x1="200" y1="275" x2="210" y2="285" stroke="#8B5CF6" stroke-width="0.5"/>
+
+                        <!-- Final Drop Down Path to Target -->
+                        <path d="M 180 200 L 180 280" fill="none" stroke="#F59E0B" stroke-width="3" stroke-dasharray="4"/>
+                        <path d="M 180 280 L 200 275" fill="none" stroke="#F59E0B" stroke-width="3" marker-end="url(#arrow-orange)"/>
+                        
+                        <!-- Target -->
+                        <circle cx="200" cy="275" r="8" fill="#F59E0B" opacity="0.5"/>
+                        <text x="215" y="265" fill="#F8FAFC" font-size="12" font-weight="bold" font-family="'Lato', sans-serif">Nearest Neighbor</text>
+
+                        <defs>
+                            <marker id="arrow-orange" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#F59E0B" /></marker>
+                        </defs>
+                    </svg>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Slide 12d: Image_Right_Text_Left (Agentic RAG) -->
+<div class="slide-container" id="slide12d">
+    <h2 class="slide-title">Evolution: Agentic RAG & Routing</h2>
+    <div class="content-area">
+        <div class="two-column">
+            <div>
+                <p>Standard RAG forces every single question through the same Vector Database. But what if the user asks about the weather today? The Vector DB won't know.</p>
+                <p><strong>Agentic RAG</strong> introduces a highly intelligent "Router Agent" (an LLM functioning as a decision maker) at the very front of the pipeline.</p>
+                <p>The Agent analyzes the user's intent and decides <em>which tool</em> to use:</p>
+                <ul class="custom-bullet">
+                    <li>Query: "What is our Q3 revenue?" ➔ Routes to <strong>SQL Database</strong>.</li>
+                    <li>Query: "Who won the game last night?" ➔ Routes to <strong>Web Search API</strong>.</li>
+                    <li>Query: "How does the HR policy work?" ➔ Routes to <strong>Vector DB (Standard RAG)</strong>.</li>
+                </ul>
+            </div>
+            <div>
+                <div class="image-wrapper">
+                    <!-- INLINE SVG: AGENTIC ROUTING -->
+                    <svg viewBox="0 0 500 350" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: 100%; background: #020617; border-radius: 12px;">
+                        
+                        <!-- User Input -->
+                        <rect x="20" y="145" width="90" height="60" rx="8" fill="#1E293B" stroke="#F8FAFC" stroke-width="2"/>
+                        <text x="65" y="170" fill="#F8FAFC" font-size="12" font-weight="bold" text-anchor="middle" font-family="'Lato', sans-serif">Complex</text>
+                        <text x="65" y="185" fill="#F8FAFC" font-size="12" font-weight="bold" text-anchor="middle" font-family="'Lato', sans-serif">Query</text>
+
+                        <path d="M 110 175 L 140 175" fill="none" stroke="#94A3B8" stroke-width="2" marker-end="url(#arrow)"/>
+
+                        <!-- The Agent / Router -->
+                        <circle cx="190" cy="175" r="40" fill="#0F172A" stroke="#38BDF8" stroke-width="4"/>
+                        <circle cx="190" cy="175" r="45" fill="none" stroke="#38BDF8" stroke-width="1" stroke-dasharray="4"/>
+                        <text x="190" y="170" fill="#38BDF8" font-size="14" font-weight="bold" text-anchor="middle" font-family="'Lato', sans-serif">LLM</text>
+                        <text x="190" y="185" fill="#38BDF8" font-size="14" font-weight="bold" text-anchor="middle" font-family="'Lato', sans-serif">Router</text>
+
+                        <!-- Routing Paths -->
+                        <path d="M 230 155 Q 260 95 300 95" fill="none" stroke="#10B981" stroke-width="3" stroke-dasharray="5" marker-end="url(#arrow-green)"/>
+                        <path d="M 235 175 L 300 175" fill="none" stroke="#F59E0B" stroke-width="3" stroke-dasharray="5" marker-end="url(#arrow-orange)"/>
+                        <path d="M 230 195 Q 260 255 300 255" fill="none" stroke="#8B5CF6" stroke-width="3" stroke-dasharray="5" marker-end="url(#arrow-purple)"/>
+
+                        <!-- Path Labels -->
+                        <text x="270" y="110" fill="#10B981" font-size="10" font-family="'Lato', sans-serif" transform="rotate(-30, 270, 110)">Structured Data</text>
+                        <text x="260" y="170" fill="#F59E0B" font-size="10" font-family="'Lato', sans-serif">Unstructured</text>
+                        <text x="270" y="240" fill="#8B5CF6" font-size="10" font-family="'Lato', sans-serif" transform="rotate(30, 270, 240)">Real-time Web</text>
+
+                        <!-- Destination Tools -->
+                        <!-- Tool 1: SQL -->
+                        <rect x="310" y="65" width="140" height="60" rx="4" fill="#0F172A" stroke="#10B981" stroke-width="2"/>
+                        <text x="380" y="90" fill="#F8FAFC" font-size="14" font-weight="bold" text-anchor="middle" font-family="'Lato', sans-serif">SQL Database</text>
+                        <text x="380" y="110" fill="#94A3B8" font-size="10" text-anchor="middle" font-family="'Lato', sans-serif">"Q3 Revenue = $4M"</text>
+
+                        <!-- Tool 2: Vector DB -->
+                        <rect x="310" y="145" width="140" height="60" rx="4" fill="#0F172A" stroke="#F59E0B" stroke-width="2"/>
+                        <text x="380" y="170" fill="#F8FAFC" font-size="14" font-weight="bold" text-anchor="middle" font-family="'Lato', sans-serif">Vector Database</text>
+                        <text x="380" y="190" fill="#94A3B8" font-size="10" text-anchor="middle" font-family="'Lato', sans-serif">(Standard RAG)</text>
+
+                        <!-- Tool 3: Web API -->
+                        <rect x="310" y="225" width="140" height="60" rx="4" fill="#0F172A" stroke="#8B5CF6" stroke-width="2"/>
+                        <text x="380" y="250" fill="#F8FAFC" font-size="14" font-weight="bold" text-anchor="middle" font-family="'Lato', sans-serif">Web Search API</text>
+                        <text x="380" y="270" fill="#94A3B8" font-size="10" text-anchor="middle" font-family="'Lato', sans-serif">"Current Weather"</text>
+
+                        <defs>
+                            <marker id="arrow-purple" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#8B5CF6" /></marker>
+                        </defs>
+                    </svg>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Slide 13: Two_Column_Tiled_Text (Evaluation & Constraints) -->
+<div class="slide-container" id="slide13">
+    <h2 class="slide-title">Evaluation & Constraints</h2>
+    <div class="content-area">
+        <div class="two-column tiled">
+            <div>
+                <h3>Evaluation Metrics (RAGAS)</h3>
+                <p>You cannot improve what you cannot measure. Frameworks like RAGAS test two main pillars:</p>
+                <ul class="custom-bullet">
+                    <li><strong>Context Precision:</strong> Did the database actually fetch the correct document?</li>
+                    <li><strong>Faithfulness:</strong> Did the LLM make up facts outside the provided context?</li>
+                </ul>
+            </div>
+            <div>
+                <h3>Hardware & Latency Tradeoffs</h3>
+                <p>Advanced RAG is heavy. Adding Cross-Encoders and Graph traversal drastically increases wait times and API costs.</p>
+                <p>Builders use <strong>Semantic Caching</strong> (saving exact previous answers) to instantly serve repeated questions, bypassing the LLM entirely to save money.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Slide 14: Section_Title (Quiz Intro) -->
+<div class="slide-container" id="slide14">
+    <div class="section-title-layout">
+        <hr>
+        <h2>Module Assessment</h2>
+        <p>Test your knowledge of the RAG Iceberg with these 10 Questions.</p>
+    </div>
+</div>
+
+<!-- Slide 15: Two_Column (MCQ 1-3) -->
+<div class="slide-container" id="slide15">
+    <h2 class="slide-title">Knowledge Check (1/4)</h2>
+    <div class="content-area">
+        <div class="two-column">
+            <div>
+                <div style="margin-bottom: 25px;">
+                    <strong style="color: #F8FAFC; display: block; margin-bottom: 10px; font-size: 20px;">1. What is the primary purpose of a Vector Database in RAG?</strong>
+                    <ul style="list-style: none; padding-left: 0;">
+                        <li style="margin-bottom: 8px;">A) To train the LLM on new data</li>
+                        <li style="margin-bottom: 8px;">B) To store and query numerical embeddings</li>
+                        <li style="margin-bottom: 8px;">C) To generate the final text response</li>
+                    </ul>
+                </div>
+                <div style="margin-bottom: 25px;">
+                    <strong style="color: #F8FAFC; display: block; margin-bottom: 10px; font-size: 20px;">2. Which mathematical formula measures the angular distance between vectors?</strong>
+                    <ul style="list-style: none; padding-left: 0;">
+                        <li style="margin-bottom: 8px;">A) Pythagorean Theorem</li>
+                        <li style="margin-bottom: 8px;">B) Cosine Similarity</li>
+                        <li style="margin-bottom: 8px;">C) Tangent Variance</li>
+                    </ul>
+                </div>
+            </div>
+            <div>
+                <div style="margin-bottom: 25px;">
+                    <strong style="color: #F8FAFC; display: block; margin-bottom: 10px; font-size: 20px;">3. Why do we use "Chunk Overlap" when prepping data?</strong>
+                    <ul style="list-style: none; padding-left: 0;">
+                        <li style="margin-bottom: 8px;">A) Because Vector DBs cannot store long text</li>
+                        <li style="margin-bottom: 8px;">B) To prevent cutting sentences in half and losing context</li>
+                        <li style="margin-bottom: 8px;">C) To encrypt sensitive data</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Slide 16: Two_Column (MCQ 4-6) -->
+<div class="slide-container" id="slide16">
+    <h2 class="slide-title">Knowledge Check (2/4)</h2>
+    <div class="content-area">
+        <div class="two-column">
+            <div>
+                <div style="margin-bottom: 25px;">
+                    <strong style="color: #F8FAFC; display: block; margin-bottom: 10px; font-size: 20px;">4. What role does LangChain typically play?</strong>
+                    <ul style="list-style: none; padding-left: 0;">
+                        <li style="margin-bottom: 8px;">A) It replaces the Vector DB</li>
+                        <li style="margin-bottom: 8px;">B) It orchestrates the retrieval and prompt pipeline</li>
+                        <li style="margin-bottom: 8px;">C) It is a specialized embedding model</li>
+                    </ul>
+                </div>
+                <div style="margin-bottom: 25px;">
+                    <strong style="color: #F8FAFC; display: block; margin-bottom: 10px; font-size: 20px;">5. How does the LLM receive the retrieved data?</strong>
+                    <ul style="list-style: none; padding-left: 0;">
+                        <li style="margin-bottom: 8px;">A) Via Prompt Injection (Context Stuffing)</li>
+                        <li style="margin-bottom: 8px;">B) By fine-tuning its weights</li>
+                        <li style="margin-bottom: 8px;">C) Through a direct database ping</li>
+                    </ul>
+                </div>
+            </div>
+            <div>
+                <div style="margin-bottom: 25px;">
+                    <strong style="color: #F8FAFC; display: block; margin-bottom: 10px; font-size: 20px;">6. What does a Cross-Encoder do in a RAG funnel?</strong>
+                    <ul style="list-style: none; padding-left: 0;">
+                        <li style="margin-bottom: 8px;">A) Translates text to another language</li>
+                        <li style="margin-bottom: 8px;">B) Deeply re-ranks retrieved documents for higher precision</li>
+                        <li style="margin-bottom: 8px;">C) Speeds up the initial database search</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Slide 17: Two_Column (MCQ 7-9) -->
+<div class="slide-container" id="slide17">
+    <h2 class="slide-title">Knowledge Check (3/4)</h2>
+    <div class="content-area">
+        <div class="two-column">
+            <div>
+                <div style="margin-bottom: 25px;">
+                    <strong style="color: #F8FAFC; display: block; margin-bottom: 10px; font-size: 20px;">7. What is GraphRAG designed to solve?</strong>
+                    <ul style="list-style: none; padding-left: 0;">
+                        <li style="margin-bottom: 8px;">A) Creating charts for UI</li>
+                        <li style="margin-bottom: 8px;">B) Answering global questions by tracking entity relationships</li>
+                        <li style="margin-bottom: 8px;">C) Encrypting databases</li>
+                    </ul>
+                </div>
+                <div style="margin-bottom: 25px;">
+                    <strong style="color: #F8FAFC; display: block; margin-bottom: 10px; font-size: 20px;">8. If a user asks "How do I fix it?", what advanced technique is needed?</strong>
+                    <ul style="list-style: none; padding-left: 0;">
+                        <li style="margin-bottom: 8px;">A) Query Reformulation</li>
+                        <li style="margin-bottom: 8px;">B) Semantic Caching</li>
+                        <li style="margin-bottom: 8px;">C) PII Masking</li>
+                    </ul>
+                </div>
+            </div>
+            <div>
+                <div style="margin-bottom: 25px;">
+                    <strong style="color: #F8FAFC; display: block; margin-bottom: 10px; font-size: 20px;">9. What trade-off is most common when adding advanced Reranking?</strong>
+                    <ul style="list-style: none; padding-left: 0;">
+                        <li style="margin-bottom: 8px;">A) Security vs Usability</li>
+                        <li style="margin-bottom: 8px;">B) Latency vs Accuracy</li>
+                        <li style="margin-bottom: 8px;">C) Storage Space vs Cost</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Slide 18: Two_Column (MCQ 10) -->
+<div class="slide-container" id="slide18">
+    <h2 class="slide-title">Knowledge Check (4/4)</h2>
+    <div class="content-area">
+        <div class="two-column">
+            <div>
+                <div style="margin-bottom: 25px;">
+                    <strong style="color: #F8FAFC; display: block; margin-bottom: 10px; font-size: 20px;">10. In RAG evaluation (like RAGAS), what does "Faithfulness" measure?</strong>
+                    <ul style="list-style: none; padding-left: 0;">
+                        <li style="margin-bottom: 8px;">A) If the user trusts the AI</li>
+                        <li style="margin-bottom: 8px;">B) If the DB returned the right document</li>
+                        <li style="margin-bottom: 8px;">C) If the LLM avoided making up facts outside the context</li>
+                    </ul>
+                </div>
+            </div>
+            <div>
+                <!-- Decorative space for alignment -->
+                <i class="fa-solid fa-clipboard-question" style="font-size: 100px; color: #334155; display: block; text-align: center; margin-top: 20px;"></i>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Slide 19: Table (Answer Key) -->
+<div class="slide-container" id="slide19">
+    <h2 class="slide-title">Answer Key</h2>
+    <div class="content-area">
+        <div class="table-layout">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 10%;">Q#</th>
+                        <th style="width: 20%;">Answer</th>
+                        <th style="width: 70%;">Explanation</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>1 - 3</td>
+                        <td class="highlight-accent">1: B, 2: B, 3: B</td>
+                        <td>Vector DBs store embeddings. Cosine Similarity finds angular distance. Overlap ensures flow between chunks.</td>
+                    </tr>
+                    <tr>
+                        <td>4 - 6</td>
+                        <td class="highlight-accent">4: B, 5: A, 6: B</td>
+                        <td>LangChain orchestrates. Retrieved context is "stuffed" into the prompt. Cross-encoders accurately rerank results.</td>
+                    </tr>
+                    <tr>
+                        <td>7 - 9</td>
+                        <td class="highlight-accent">7: B, 8: A, 9: B</td>
+                        <td>GraphRAG maps entity connections. Reformulation clarifies vague queries. Reranking adds wait time (latency) but boosts accuracy.</td>
+                    </tr>
+                    <tr>
+                        <td>10</td>
+                        <td class="highlight-accent">10: C</td>
+                        <td>Faithfulness strictly tests if the LLM hallucinated beyond the provided retrieved context.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Slide 20: Q&A -->
+<div class="slide-container" id="slide20">
+    <div class="section-title-layout">
+        <h2>Questions?</h2>
+        <p>You have now mastered both the visible tip and the hidden depths of the RAG Iceberg.</p>
+        <hr>
+        <div class="subtitle">
+            <i class="fa-solid fa-graduation-cap" style="color: #38BDF8; font-size: 32px; margin-top: 20px;"></i>
+        </div>
+    </div>
+</div>
+
+</body>
+</html>
+```
